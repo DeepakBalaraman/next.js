@@ -553,6 +553,7 @@ export async function handleRouteType({
         manifestLoader.deleteMiddlewareManifest(key)
       }
 
+      await manifestLoader.loadStats(page, 'app')
       await manifestLoader.loadAppBuildManifest(page)
       await manifestLoader.loadBuildManifest(page, 'app')
       await manifestLoader.loadAppPathsManifest(page)

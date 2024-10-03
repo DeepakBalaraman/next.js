@@ -309,6 +309,69 @@ pub struct ClientBuildManifest<'a> {
     pub pages: HashMap<RcStr, Vec<&'a str>>,
 }
 
+#[derive(Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WebpackStatsAssetInfo {}
+
+#[derive(Serialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WebpackStatsAsset {
+    #[serde(rename = "type")]
+    pub ty: RcStr,
+    pub name: RcStr,
+    pub info: WebpackStatsAssetInfo,
+    pub size: u64,
+    pub emitted: bool,
+    pub compared_for_emit: bool,
+    pub cached: bool,
+    pub chunks: Vec<RcStr>,
+}
+
+#[derive(Serialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WebpackStatsChunk {
+    pub rendered: bool,
+    pub initial: bool,
+    pub entry: bool,
+    pub recorded: bool,
+    pub id: RcStr,
+    pub size: u64,
+    pub hash: RcStr,
+    pub files: Vec<RcStr>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WebpackStatsModule {
+    pub name: RcStr,
+    pub id: RcStr,
+    pub chunks: Vec<RcStr>,
+    pub size: Option<u64>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WebpackStatsEntrypointAssets {
+    pub name: RcStr,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WebpackStatsEntrypoint {
+    pub name: RcStr,
+    pub chunks: Vec<RcStr>,
+    pub assets: Vec<WebpackStatsEntrypointAssets>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WebpackStats {
+    pub assets: Vec<WebpackStatsAsset>,
+    pub entrypoints: IndexMap<RcStr, WebpackStatsEntrypoint>,
+    pub chunks: Vec<WebpackStatsChunk>,
+    pub modules: Vec<WebpackStatsModule>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

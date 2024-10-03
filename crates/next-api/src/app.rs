@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{indexset, IndexMap, IndexSet};
 use next_core::{
     all_assets_from_entries,
     app_segment_config::NextSegmentConfig,
@@ -78,6 +78,7 @@ use crate::{
     project::Project,
     route::{AppPageRoute, Endpoint, Route, Routes, WrittenEndpoint},
     server_actions::create_server_actions_manifest,
+    webpack_stats::generate_webpack_stats,
 };
 
 #[turbo_tasks::value]
@@ -828,8 +829,8 @@ impl AppEndpoint {
 
         let server_path = node_root.join("server".into());
 
-        let mut server_assets = vec![];
-        let mut client_assets = vec![];
+        let mut server_assets = indexset![];
+        let mut client_assets = indexset![];
         // assets to add to the middleware manifest (to be loaded in the edge runtime).
         let mut middleware_assets = vec![];
 
@@ -853,7 +854,7 @@ impl AppEndpoint {
 
                 let mut client_shared_chunks_paths = vec![];
                 for chunk in client_shared_chunk_group.assets.await?.iter().copied() {
-                    client_assets.push(chunk);
+                    client_assets.insert(chunk);
 
                     let chunk_path = chunk.ident().path().await?;
                     if chunk_path.extension_ref() == Some("js") {
@@ -971,7 +972,7 @@ impl AppEndpoint {
                         File::from(serde_json::to_string_pretty(&app_build_manifest)?).into(),
                     ),
                 ));
-                server_assets.push(app_build_manifest_output);
+                server_assets.insert(app_build_manifest_output);
 
                 // polyfill-nomodule.js is a pre-compiled asset distributed as part of next,
                 // load it as a RawModule.
@@ -988,7 +989,19 @@ impl AppEndpoint {
                     .context("failed to resolve client-relative path to polyfill")?
                     .into();
                 let polyfill_client_paths = vec![polyfill_client_path];
-                client_assets.push(Vc::upcast(polyfill_output_asset));
+                client_assets.insert(Vc::upcast(polyfill_output_asset));
+
+                let webpack_stats = generate_webpack_stats(&app_entry, &client_assets).await?;
+
+                let stats_output: Vc<Box<dyn OutputAsset>> = Vc::upcast(VirtualOutputAsset::new(
+                    node_root.join(
+                        format!("server/app{manifest_path_prefix}/webpack-stats.json",).into(),
+                    ),
+                    AssetContent::file(
+                        File::from(serde_json::to_string_pretty(&webpack_stats)?).into(),
+                    ),
+                ));
+                client_assets.insert(Vc::upcast(stats_output));
 
                 let build_manifest = BuildManifest {
                     root_main_files: client_shared_chunks_paths,
@@ -1003,7 +1016,7 @@ impl AppEndpoint {
                         File::from(serde_json::to_string_pretty(&build_manifest)?).into(),
                     ),
                 ));
-                server_assets.push(build_manifest_output);
+                server_assets.insert(build_manifest_output);
 
                 let entry_manifest = ClientReferenceManifest::build_output(
                     node_root,
@@ -1016,7 +1029,7 @@ impl AppEndpoint {
                     this.app_project.project().next_config(),
                     runtime,
                 );
-                server_assets.push(entry_manifest);
+                server_assets.insert(entry_manifest);
 
                 if runtime == NextRuntime::Edge {
                     middleware_assets.push(entry_manifest);
@@ -1067,7 +1080,7 @@ impl AppEndpoint {
             )))
         }
 
-        let client_assets = OutputAssets::new(client_assets);
+        let client_assets = OutputAssets::new(client_assets.iter().cloned().collect::<Vec<_>>());
 
         let next_font_manifest_output = create_font_manifest(
             this.app_project.project().client_root(),
@@ -1080,7 +1093,7 @@ impl AppEndpoint {
             true,
         )
         .await?;
-        server_assets.push(next_font_manifest_output);
+        server_assets.insert(next_font_manifest_output);
 
         let endpoint_output = match runtime {
             NextRuntime::Edge => {
@@ -1111,7 +1124,7 @@ impl AppEndpoint {
                         Vc::upcast(chunking_context),
                     )
                     .await?;
-                    server_assets.push(manifest);
+                    server_assets.insert(manifest);
                     evaluatable_assets.push(loader);
                 }
 
@@ -1202,12 +1215,12 @@ impl AppEndpoint {
                         .cell(),
                     ),
                 ));
-                server_assets.push(middleware_manifest_v2);
+                server_assets.insert(middleware_manifest_v2);
 
                 // create app paths manifest
                 let app_paths_manifest_output =
                     create_app_paths_manifest(node_root, &app_entry.original_name, entry_file)?;
-                server_assets.push(app_paths_manifest_output);
+                server_assets.insert(app_paths_manifest_output);
 
                 // create react-loadable-manifest for next/dynamic
                 let mut dynamic_import_modules = collect_next_dynamic_imports(
@@ -1239,7 +1252,7 @@ impl AppEndpoint {
 
                 AppEndpointOutput::Edge {
                     files,
-                    server_assets: Vc::cell(server_assets),
+                    server_assets: Vc::cell(server_assets.iter().cloned().collect::<Vec<_>>()),
                     client_assets,
                 }
             }
@@ -1264,7 +1277,7 @@ impl AppEndpoint {
                         Vc::upcast(chunking_context),
                     )
                     .await?;
-                    server_assets.push(manifest);
+                    server_assets.insert(manifest);
                     evaluatable_assets.push(loader);
                 }
 
@@ -1350,7 +1363,7 @@ impl AppEndpoint {
                 }
                 .instrument(tracing::trace_span!("server node entrypoint"))
                 .await?);
-                server_assets.push(rsc_chunk);
+                server_assets.insert(rsc_chunk);
 
                 let app_paths_manifest_output = create_app_paths_manifest(
                     node_root,
@@ -1361,7 +1374,7 @@ impl AppEndpoint {
                         .context("RSC chunk path should be within app paths manifest directory")?
                         .into(),
                 )?;
-                server_assets.push(app_paths_manifest_output);
+                server_assets.insert(app_paths_manifest_output);
 
                 // create react-loadable-manifest for next/dynamic
                 let availability_info = Value::new(AvailabilityInfo::Root);
@@ -1395,7 +1408,7 @@ impl AppEndpoint {
 
                 AppEndpointOutput::NodeJs {
                     rsc_chunk,
-                    server_assets: Vc::cell(server_assets),
+                    server_assets: Vc::cell(server_assets.iter().cloned().collect::<Vec<_>>()),
                     client_assets,
                 }
             }

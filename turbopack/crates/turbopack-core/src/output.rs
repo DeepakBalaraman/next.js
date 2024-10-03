@@ -20,6 +20,10 @@ pub trait OutputAsset: Asset {
     fn references(self: Vc<Self>) -> Vc<OutputAssets> {
         OutputAssets::empty()
     }
+
+    fn len(self: Vc<Self>) -> Vc<Option<Vc<u64>>> {
+        Vc::cell(None)
+    }
 }
 
 #[turbo_tasks::value(transparent)]
